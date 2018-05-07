@@ -1,0 +1,10 @@
+C:\Users\Lingqian\Documents\Visual Studio 2015\Projects\HaiboProjectX\TradingKing\GenerateCharts\bin\Debug\GenerateCharts.exe.config
+C:\Users\Lingqian\Documents\Visual Studio 2015\Projects\HaiboProjectX\TradingKing\GenerateCharts\bin\Debug\GenerateCharts.exe
+C:\Users\Lingqian\Documents\Visual Studio 2015\Projects\HaiboProjectX\TradingKing\GenerateCharts\bin\Debug\GenerateCharts.pdb
+C:\Users\Lingqian\Documents\Visual Studio 2015\Projects\HaiboProjectX\TradingKing\GenerateCharts\bin\Debug\Google.Protobuf.dll
+C:\Users\Lingqian\Documents\Visual Studio 2015\Projects\HaiboProjectX\TradingKing\GenerateCharts\bin\Debug\MySql.Data.dll
+C:\Users\Lingqian\Documents\Visual Studio 2015\Projects\HaiboProjectX\TradingKing\GenerateCharts\bin\Debug\Google.Protobuf.xml
+C:\Users\Lingqian\Documents\Visual Studio 2015\Projects\HaiboProjectX\TradingKing\GenerateCharts\bin\Debug\MySql.Data.xml
+C:\Users\Lingqian\Documents\Visual Studio 2015\Projects\HaiboProjectX\TradingKing\GenerateCharts\obj\Debug\GenerateCharts.csprojResolveAssemblyReference.cache
+C:\Users\Lingqian\Documents\Visual Studio 2015\Projects\HaiboProjectX\TradingKing\GenerateCharts\obj\Debug\GenerateCharts.exe
+C:\Users\Lingqian\Documents\Visual Studio 2015\Projects\HaiboProjectX\TradingKing\GenerateCharts\obj\Debug\GenerateCharts.pdb
