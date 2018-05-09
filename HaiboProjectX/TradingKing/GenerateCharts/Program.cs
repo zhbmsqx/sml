@@ -4,15 +4,18 @@ using System.IO;
 using System.Collections.Generic;
 using System.Threading;
 using System.Globalization;
+using System.Linq;
 
 namespace GenerateCharts
 {
     class Program
     {
-        static string outputPath = @"D:\78stk\sourceCode\StocksGenerated\{0}";
-
         static void Main(string[] args)
         {
+            //Console.WriteLine(@" date: data[{0}].date, type: {1}, price: data[{0}].low, low: data[{0}].low, high: data[{0}].high ,", 1, 2);
+            //Console.WriteLine(string.Format(@"\{ date\: data\[{0}\]\.date, type: {1}, price: data[{0}].low, low: data[{0}].low, high: data[{0}].high \},", 1, "123"));
+            //return;
+
             Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
             Thread.CurrentThread.CurrentUICulture = new CultureInfo("en-US");
 
@@ -23,7 +26,7 @@ namespace GenerateCharts
             if (dbCon.IsConnect())
             {
                 //suppose col0 and col1 are defined as VARCHAR in the DB
-                string query = "SELECT date,open,close,high,low,volume FROM 000002_d_k_data ORDER BY date desc";
+                string query = "SELECT date,open,close,high,low,volume,code FROM 000002_d_k_data ORDER BY date desc";
                 var cmd = new MySqlCommand(query, dbCon.Connection);
                 var reader = cmd.ExecuteReader();
                 while (reader.Read())
@@ -36,6 +39,7 @@ namespace GenerateCharts
                         High = reader.GetFloat(3),
                         Low = reader.GetFloat(4),
                         Volume = reader.GetInt32(5),
+                        Code = reader.GetString(6)
                     };
 
                     chartDataList.Add(data);
@@ -43,17 +47,9 @@ namespace GenerateCharts
                 dbCon.Close();
             }
 
-            using (StreamWriter sw = new StreamWriter(string.Format(outputPath, "data.csv")))
-            {
-                sw.AutoFlush = true;
-
-                sw.WriteLine("Date,Open,High,Low,Close,Volume");
-
-                foreach (var d in chartDataList)
-                {
-                    sw.WriteLine(d.ToString());
-                }
-            }
+            TradeDataAnalyzer TradeDataAnalyzer = new TradeDataAnalyzer(chartDataList);
+            TradeDataAnalyzer.GenerateDataCsvFile();
+            TradeDataAnalyzer.GenerateHtmlFile();
         }
     }
 }

@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+    body {
+        font: 10px sans-serif;
+    }
+
+    text {
+        fill: #000;
+    }
+
+        text.symbol {
+            fill: #BBBBBB;
+        }
+
+    path {
+        fill: none;
+        stroke-width: 1;
+    }
+
+        path.candle {
+            stroke: #000000;
+        }
+
+            path.candle.body {
+                stroke-width: 0;
+            }
+
+            path.candle.up {
+                fill: #00AA00;
+                stroke: #00AA00;
+            }
+
+            path.candle.down {
+                fill: #FF0000;
+                stroke: #FF0000;
+            }
+
+    .close.annotation.up path {
+        fill: #00AA00;
+    }
+
+    path.volume {
+        fill: #DDDDDD;
+    }
+
+    .indicator-plot path.line {
+        fill: none;
+        stroke-width: 1;
+    }
+
+    .ma-0 path.line {
+        stroke: #1f77b4;
+    }
+
+    .ma-1 path.line {
+        stroke: #aec7e8;
+    }
+
+    .ma-2 path.line {
+        stroke: #ff7f0e;
+    }
+
+    button {
+        position: absolute;
+        right: 110px;
+        top: 25px;
+    }
+
+    path.macd {
+        stroke: #0000AA;
+    }
+
+    path.signal {
+        stroke: #FF9999;
+    }
+
+    path.zero {
+        stroke: #BBBBBB;
+        stroke-dasharray: 0;
+        stroke-opacity: 0.5;
+    }
+
+    path.difference {
+        fill: #BBBBBB;
+        opacity: 0.5;
+    }
+
+    path.rsi {
+        stroke: #000000;
+    }
+
+    path.overbought, path.oversold {
+        stroke: #FF9999;
+        stroke-dasharray: 5, 5;
+    }
+
+    path.middle, path.zero {
+        stroke: #BBBBBB;
+        stroke-dasharray: 5, 5;
+    }
+
+    .analysis path, .analysis circle {
+        stroke: blue;
+        stroke-width: 0.8;
+    }
+
+    .trendline circle {
+        stroke-width: 0;
+        display: none;
+    }
+
+    .mouseover .trendline path {
+        stroke-width: 1.2;
+    }
+
+    .mouseover .trendline circle {
+        stroke-width: 1;
+        display: inline;
+    }
+
+    .dragging .trendline path, .dragging .trendline circle {
+        stroke: darkblue;
+    }
+
+    .interaction path, .interaction circle {
+        pointer-events: all;
+    }
+
+    .interaction .body {
+        cursor: move;
+    }
+
+    .trendlines .interaction .start, .trendlines .interaction .end {
+        cursor: nwse-resize;
+    }
+
+    .supstance path {
+        stroke-dasharray: 2, 2;
+    }
+
+    .supstances .interaction path {
+        pointer-events: all;
+        cursor: ns-resize;
+    }
+
+    .mouseover .supstance path {
+        stroke-width: 1.5;
+    }
+
+    .dragging .supstance path {
+        stroke: darkblue;
+    }
+
+    .crosshair {
+        cursor: crosshair;
+    }
+
+        .crosshair path.wire {
+            stroke: #DDDDDD;
+            stroke-dasharray: 1, 1;
+        }
+
+        .crosshair .axisannotation path {
+            fill: #DDDDDD;
+        }
+
+    .tradearrow path.tradearrow {
+        stroke: none;
+    }
+
+    .tradearrow path.buy {
+        fill: #0000FF;
+    }
+
+    .tradearrow path.sell {
+        fill: #9900FF;
+    }
+
+    .tradearrow path.highlight {
+        fill: none;
+        stroke-width: 2;
+    }
+
+        .tradearrow path.highlight.buy {
+            stroke: #0000FF;
+        }
+
+        .tradearrow path.highlight.sell {
+            stroke: #9900FF;
+        }
+</style>
+<body>
+    <button>Reset</button>
+    <script src="http://d3js.org/d3.v4.min.js"></script>
+    <script src="http://techanjs.org/techan.min.js"></script>
+    <script>
+
+    var dim = {
+        width: 960, height: 500,
+        margin: { top: 20, right: 50, bottom: 30, left: 50 },
+        ohlc: { height: 305 },
+        indicator: { height: 65, padding: 5 }
+    };
+    dim.plot = {
+        width: dim.width - dim.margin.left - dim.margin.right,
+        height: dim.height - dim.margin.top - dim.margin.bottom
+    };
+    dim.indicator.top = dim.ohlc.height+dim.indicator.padding;
+    dim.indicator.bottom = dim.indicator.top+dim.indicator.height+dim.indicator.padding;
+
+    var indicatorTop = d3.scaleLinear()
+            .range([dim.indicator.top, dim.indicator.bottom]);
+
+    var parseDate = d3.timeParse("%d-%b-%y");
+
+    var zoom = d3.zoom()
+            .on("zoom", zoomed);
+
+    var x = techan.scale.financetime()
+            .range([0, dim.plot.width]);
+
+    var y = d3.scaleLinear()
+            .range([dim.ohlc.height, 0]);
+
+
+    var yPercent = y.copy();   // Same as y at this stage, will get a different domain later
+
+    var yInit, yPercentInit, zoomableInit;
+
+    var yVolume = d3.scaleLinear()
+            .range([y(0), y(0.2)]);
+
+    var candlestick = techan.plot.candlestick()
+            .xScale(x)
+            .yScale(y);
+
+    var tradearrow = techan.plot.tradearrow()
+            .xScale(x)
+            .yScale(y)
+            .y(function(d) {
+                // Display the buy and sell arrows a bit above and below the price, so the price is still visible
+                if(d.type === 'buy') return y(d.low)+5;
+                if(d.type === 'sell') return y(d.high)-5;
+                else return y(d.price);
+            });
+
+    var sma0 = techan.plot.sma()
+            .xScale(x)
+            .yScale(y);
+
+    var sma1 = techan.plot.sma()
+            .xScale(x)
+            .yScale(y);
+
+    var ema2 = techan.plot.ema()
+            .xScale(x)
+            .yScale(y);
+
+    var volume = techan.plot.volume()
+            .accessor(candlestick.accessor())   // Set the accessor to a ohlc accessor so we get highlighted bars
+            .xScale(x)
+            .yScale(yVolume);
+
+    var trendline = techan.plot.trendline()
+            .xScale(x)
+            .yScale(y);
+
+    var supstance = techan.plot.supstance()
+            .xScale(x)
+            .yScale(y);
+
+    var xAxis = d3.axisBottom(x);
+
+    var timeAnnotation = techan.plot.axisannotation()
+            .axis(xAxis)
+            .orient('bottom')
+            .format(d3.timeFormat('%Y-%m-%d'))
+            .width(65)
+            .translate([0, dim.plot.height]);
+
+    var yAxis = d3.axisRight(y);
+
+    var ohlcAnnotation = techan.plot.axisannotation()
+            .axis(yAxis)
+            .orient('right')
+            .format(d3.format(',.2f'))
+            .translate([x(1), 0]);
+
+    var closeAnnotation = techan.plot.axisannotation()
+            .axis(yAxis)
+            .orient('right')
+            .accessor(candlestick.accessor())
+            .format(d3.format(',.2f'))
+            .translate([x(1), 0]);
+
+    var percentAxis = d3.axisLeft(yPercent)
+            .tickFormat(d3.format('+.1%'));
+
+    var percentAnnotation = techan.plot.axisannotation()
+            .axis(percentAxis)
+            .orient('left');
+
+    var volumeAxis = d3.axisRight(yVolume)
+            .ticks(3)
+            .tickFormat(d3.format(",.3s"));
+
+    var volumeAnnotation = techan.plot.axisannotation()
+            .axis(volumeAxis)
+            .orient("right")
+            .width(35);
+
+    var macdScale = d3.scaleLinear()
+            .range([indicatorTop(0)+dim.indicator.height, indicatorTop(0)]);
+
+    var rsiScale = macdScale.copy()
+            .range([indicatorTop(1)+dim.indicator.height, indicatorTop(1)]);
+
+    var macd = techan.plot.macd()
+            .xScale(x)
+            .yScale(macdScale);
+
+    var macdAxis = d3.axisRight(macdScale)
+            .ticks(3);
+
+    var macdAnnotation = techan.plot.axisannotation()
+            .axis(macdAxis)
+            .orient("right")
+            .format(d3.format(',.2f'))
+            .translate([x(1), 0]);
+
+    var macdAxisLeft = d3.axisLeft(macdScale)
+            .ticks(3);
+
+    var macdAnnotationLeft = techan.plot.axisannotation()
+            .axis(macdAxisLeft)
+            .orient("left")
+            .format(d3.format(',.2f'));
+
+    var rsi = techan.plot.rsi()
+            .xScale(x)
+            .yScale(rsiScale);
+
+    var rsiAxis = d3.axisRight(rsiScale)
+            .ticks(3);
+
+    var rsiAnnotation = techan.plot.axisannotation()
+            .axis(rsiAxis)
+            .orient("right")
+            .format(d3.format(',.2f'))
+            .translate([x(1), 0]);
+
+    var rsiAxisLeft = d3.axisLeft(rsiScale)
+            .ticks(3);
+
+    var rsiAnnotationLeft = techan.plot.axisannotation()
+            .axis(rsiAxisLeft)
+            .orient("left")
+            .format(d3.format(',.2f'));
+
+    var ohlcCrosshair = techan.plot.crosshair()
+            .xScale(timeAnnotation.axis().scale())
+            .yScale(ohlcAnnotation.axis().scale())
+            .xAnnotation(timeAnnotation)
+            .yAnnotation([ohlcAnnotation, percentAnnotation, volumeAnnotation])
+            .verticalWireRange([0, dim.plot.height]);
+
+    var macdCrosshair = techan.plot.crosshair()
+            .xScale(timeAnnotation.axis().scale())
+            .yScale(macdAnnotation.axis().scale())
+            .xAnnotation(timeAnnotation)
+            .yAnnotation([macdAnnotation, macdAnnotationLeft])
+            .verticalWireRange([0, dim.plot.height]);
+
+    var rsiCrosshair = techan.plot.crosshair()
+            .xScale(timeAnnotation.axis().scale())
+            .yScale(rsiAnnotation.axis().scale())
+            .xAnnotation(timeAnnotation)
+            .yAnnotation([rsiAnnotation, rsiAnnotationLeft])
+            .verticalWireRange([0, dim.plot.height]);
+
+    var svg = d3.select("body").append("svg")
+            .attr("width", dim.width)
+            .attr("height", dim.height);
+
+    var defs = svg.append("defs");
+
+    defs.append("clipPath")
+            .attr("id", "ohlcClip")
+        .append("rect")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("width", dim.plot.width)
+            .attr("height", dim.ohlc.height);
+
+    defs.selectAll("indicatorClip").data([0, 1])
+        .enter()
+            .append("clipPath")
+            .attr("id", function(d, i) { return "indicatorClip-" + i; })
+        .append("rect")
+            .attr("x", 0)
+            .attr("y", function(d, i) { return indicatorTop(i); })
+            .attr("width", dim.plot.width)
+            .attr("height", dim.indicator.height);
+
+    svg = svg.append("g")
+            .attr("transform", "translate(" + dim.margin.left + "," + dim.margin.top + ")");
+
+    svg.append('text')
+            .attr("class", "symbol")
+            .attr("x", 20)
+            .text("Facebook, Inc. (FB)");
+
+    svg.append("g")
+            .attr("class", "x axis")
+            .attr("transform", "translate(0," + dim.plot.height + ")");
+
+    var ohlcSelection = svg.append("g")
+            .attr("class", "ohlc")
+            .attr("transform", "translate(0,0)");
+
+    ohlcSelection.append("g")
+            .attr("class", "axis")
+            .attr("transform", "translate(" + x(1) + ",0)")
+        .append("text")
+            .attr("transform", "rotate(-90)")
+            .attr("y", -12)
+            .attr("dy", ".71em")
+            .style("text-anchor", "end")
+            .text("Price ($)");
+
+    ohlcSelection.append("g")
+            .attr("class", "close annotation up");
+
+    ohlcSelection.append("g")
+            .attr("class", "volume")
+            .attr("clip-path", "url(#ohlcClip)");
+
+    ohlcSelection.append("g")
+            .attr("class", "candlestick")
+            .attr("clip-path", "url(#ohlcClip)");
+
+    ohlcSelection.append("g")
+            .attr("class", "indicator sma ma-0")
+            .attr("clip-path", "url(#ohlcClip)");
+
+    ohlcSelection.append("g")
+            .attr("class", "indicator sma ma-1")
+            .attr("clip-path", "url(#ohlcClip)");
+
+    ohlcSelection.append("g")
+            .attr("class", "indicator ema ma-2")
+            .attr("clip-path", "url(#ohlcClip)");
+
+    ohlcSelection.append("g")
+            .attr("class", "percent axis");
+
+    ohlcSelection.append("g")
+            .attr("class", "volume axis");
+
+    var indicatorSelection = svg.selectAll("svg > g.indicator").data(["macd", "rsi"]).enter()
+             .append("g")
+                .attr("class", function(d) { return d + " indicator"; });
+
+    indicatorSelection.append("g")
+            .attr("class", "axis right")
+            .attr("transform", "translate(" + x(1) + ",0)");
+
+    indicatorSelection.append("g")
+            .attr("class", "axis left")
+            .attr("transform", "translate(" + x(0) + ",0)");
+
+    indicatorSelection.append("g")
+            .attr("class", "indicator-plot")
+            .attr("clip-path", function(d, i) { return "url(#indicatorClip-" + i + ")"; });
+
+    // Add trendlines and other interactions last to be above zoom pane
+    svg.append('g')
+            .attr("class", "crosshair ohlc");
+
+    svg.append("g")
+            .attr("class", "tradearrow")
+            .attr("clip-path", "url(#ohlcClip)");
+
+    svg.append('g')
+            .attr("class", "crosshair macd");
+
+    svg.append('g')
+            .attr("class", "crosshair rsi");
+
+    svg.append("g")
+            .attr("class", "trendlines analysis")
+            .attr("clip-path", "url(#ohlcClip)");
+    svg.append("g")
+            .attr("class", "supstances analysis")
+            .attr("clip-path", "url(#ohlcClip)");
+
+    d3.select("button").on("click", reset);
+
+        //d3.csv("data.csv", function(error, data) {
+d3.csv("000002.csv", function(error, data) {
+        var accessor = candlestick.accessor(),
+            indicatorPreRoll = 33;  // Don't show where indicators don't have data
+
+        data = data.map(function(d) {
+            return {
+                date: parseDate(d.Date),
+                open: +d.Open,
+                high: +d.High,
+                low: +d.Low,
+                close: +d.Close,
+                volume: +d.Volume
+            };
+        }).sort(function(a, b) { return d3.ascending(accessor.d(a), accessor.d(b)); });
+
+        x.domain(techan.scale.plot.time(data).domain());
+        y.domain(techan.scale.plot.ohlc(data.slice(indicatorPreRoll)).domain());
+        yPercent.domain(techan.scale.plot.percent(y, accessor(data[indicatorPreRoll])).domain());
+        yVolume.domain(techan.scale.plot.volume(data).domain());
+
+        //var trendlineData = [
+        //    { start: { date: new Date(2014, 2, 11), value: 72.50 }, end: { date: new Date(2014, 5, 9), value: 63.34 } },
+        //    { start: { date: new Date(2013, 10, 21), value: 43 }, end: { date: new Date(2014, 2, 17), value: 70.50 } }
+        //];
+
+        //var supstanceData = [
+        //    { start: new Date(2014, 2, 11), end: new Date(2014, 5, 9), value: 63.64 },
+        //    { start: new Date(2013, 10, 21), end: new Date(2014, 2, 17), value: 55.50 }
+        //];
+        
+        ////var trades = [
+        //{ date: data[97].date, type: "buy", price: data[97].low, low: data[97].low, high: data[97].high },
+        //{ date: data[100].date, type: "sell", price: data[100].high, low: data[100].low, high: data[100].high },
+        //{ date: data[130].date, type: "buy", price: data[130].low, low: data[130].low, high: data[130].high },
+        //{ date: data[190].date, type: "sell", price: data[190].low, low: data[190].low, high: data[190].high }
+        //];
+var trades = [
+{date: data[18].date, type: "buy", price: data[18].low, low: data[18].low, high: data[18].high},
+{date: data[19].date, type: "buy", price: data[19].low, low: data[19].low, high: data[19].high},
+{date: data[20].date, type: "buy", price: data[20].low, low: data[20].low, high: data[20].high},
+{date: data[21].date, type: "buy", price: data[21].low, low: data[21].low, high: data[21].high},
+{date: data[22].date, type: "buy", price: data[22].low, low: data[22].low, high: data[22].high},
+{date: data[25].date, type: "buy", price: data[25].low, low: data[25].low, high: data[25].high},
+{date: data[26].date, type: "buy", price: data[26].low, low: data[26].low, high: data[26].high},
+{date: data[27].date, type: "buy", price: data[27].low, low: data[27].low, high: data[27].high},
+{date: data[28].date, type: "buy", price: data[28].low, low: data[28].low, high: data[28].high},
+{date: data[29].date, type: "buy", price: data[29].low, low: data[29].low, high: data[29].high},
+{date: data[31].date, type: "buy", price: data[31].low, low: data[31].low, high: data[31].high},
+{date: data[33].date, type: "buy", price: data[33].low, low: data[33].low, high: data[33].high},
+{date: data[34].date, type: "buy", price: data[34].low, low: data[34].low, high: data[34].high},
+{date: data[35].date, type: "buy", price: data[35].low, low: data[35].low, high: data[35].high},
+{date: data[37].date, type: "buy", price: data[37].low, low: data[37].low, high: data[37].high},
+{date: data[41].date, type: "buy", price: data[41].low, low: data[41].low, high: data[41].high},
+{date: data[42].date, type: "sell", price: data[42].low, low: data[42].low, high: data[42].high},
+{date: data[43].date, type: "sell", price: data[43].low, low: data[43].low, high: data[43].high},
+{date: data[44].date, type: "sell", price: data[44].low, low: data[44].low, high: data[44].high},
+{date: data[45].date, type: "sell", price: data[45].low, low: data[45].low, high: data[45].high},
+{date: data[46].date, type: "sell", price: data[46].low, low: data[46].low, high: data[46].high},
+{date: data[50].date, type: "buy", price: data[50].low, low: data[50].low, high: data[50].high},
+{date: data[51].date, type: "sell", price: data[51].low, low: data[51].low, high: data[51].high},
+{date: data[52].date, type: "buy", price: data[52].low, low: data[52].low, high: data[52].high},
+{date: data[53].date, type: "sell", price: data[53].low, low: data[53].low, high: data[53].high},
+{date: data[54].date, type: "sell", price: data[54].low, low: data[54].low, high: data[54].high},
+{date: data[55].date, type: "buy", price: data[55].low, low: data[55].low, high: data[55].high},
+{date: data[56].date, type: "buy", price: data[56].low, low: data[56].low, high: data[56].high},
+{date: data[57].date, type: "buy", price: data[57].low, low: data[57].low, high: data[57].high},
+{date: data[58].date, type: "buy", price: data[58].low, low: data[58].low, high: data[58].high},
+{date: data[59].date, type: "buy", price: data[59].low, low: data[59].low, high: data[59].high},
+{date: data[64].date, type: "buy", price: data[64].low, low: data[64].low, high: data[64].high},
+{date: data[65].date, type: "buy", price: data[65].low, low: data[65].low, high: data[65].high},
+{date: data[66].date, type: "buy", price: data[66].low, low: data[66].low, high: data[66].high},
+{date: data[67].date, type: "buy", price: data[67].low, low: data[67].low, high: data[67].high},
+{date: data[68].date, type: "buy", price: data[68].low, low: data[68].low, high: data[68].high},
+{date: data[69].date, type: "buy", price: data[69].low, low: data[69].low, high: data[69].high},
+{date: data[73].date, type: "sell", price: data[73].low, low: data[73].low, high: data[73].high},
+{date: data[74].date, type: "sell", price: data[74].low, low: data[74].low, high: data[74].high},
+{date: data[75].date, type: "sell", price: data[75].low, low: data[75].low, high: data[75].high},
+{date: data[76].date, type: "sell", price: data[76].low, low: data[76].low, high: data[76].high},
+{date: data[78].date, type: "sell", price: data[78].low, low: data[78].low, high: data[78].high},
+{date: data[79].date, type: "sell", price: data[79].low, low: data[79].low, high: data[79].high},
+{date: data[82].date, type: "sell", price: data[82].low, low: data[82].low, high: data[82].high},
+{date: data[87].date, type: "sell", price: data[87].low, low: data[87].low, high: data[87].high},
+{date: data[89].date, type: "buy", price: data[89].low, low: data[89].low, high: data[89].high},
+{date: data[90].date, type: "buy", price: data[90].low, low: data[90].low, high: data[90].high},
+{date: data[91].date, type: "buy", price: data[91].low, low: data[91].low, high: data[91].high},
+{date: data[92].date, type: "buy", price: data[92].low, low: data[92].low, high: data[92].high},
+{date: data[93].date, type: "buy", price: data[93].low, low: data[93].low, high: data[93].high},
+{date: data[94].date, type: "buy", price: data[94].low, low: data[94].low, high: data[94].high},
+{date: data[95].date, type: "buy", price: data[95].low, low: data[95].low, high: data[95].high},
+{date: data[96].date, type: "buy", price: data[96].low, low: data[96].low, high: data[96].high},
+{date: data[97].date, type: "buy", price: data[97].low, low: data[97].low, high: data[97].high},
+{date: data[98].date, type: "buy", price: data[98].low, low: data[98].low, high: data[98].high},
+{date: data[99].date, type: "buy", price: data[99].low, low: data[99].low, high: data[99].high},
+{date: data[101].date, type: "buy", price: data[101].low, low: data[101].low, high: data[101].high},
+{date: data[104].date, type: "sell", price: data[104].low, low: data[104].low, high: data[104].high},
+{date: data[107].date, type: "sell", price: data[107].low, low: data[107].low, high: data[107].high},
+{date: data[110].date, type: "buy", price: data[110].low, low: data[110].low, high: data[110].high},
+{date: data[111].date, type: "buy", price: data[111].low, low: data[111].low, high: data[111].high},
+{date: data[112].date, type: "buy", price: data[112].low, low: data[112].low, high: data[112].high},
+{date: data[113].date, type: "buy", price: data[113].low, low: data[113].low, high: data[113].high},
+{date: data[114].date, type: "buy", price: data[114].low, low: data[114].low, high: data[114].high},
+{date: data[118].date, type: "sell", price: data[118].low, low: data[118].low, high: data[118].high},
+{date: data[119].date, type: "sell", price: data[119].low, low: data[119].low, high: data[119].high},
+{date: data[120].date, type: "sell", price: data[120].low, low: data[120].low, high: data[120].high},
+{date: data[121].date, type: "sell", price: data[121].low, low: data[121].low, high: data[121].high},
+{date: data[122].date, type: "sell", price: data[122].low, low: data[122].low, high: data[122].high},
+{date: data[123].date, type: "sell", price: data[123].low, low: data[123].low, high: data[123].high},
+{date: data[124].date, type: "sell", price: data[124].low, low: data[124].low, high: data[124].high},
+{date: data[130].date, type: "sell", price: data[130].low, low: data[130].low, high: data[130].high},
+{date: data[131].date, type: "sell", price: data[131].low, low: data[131].low, high: data[131].high},
+{date: data[132].date, type: "sell", price: data[132].low, low: data[132].low, high: data[132].high},
+{date: data[133].date, type: "sell", price: data[133].low, low: data[133].low, high: data[133].high},
+{date: data[134].date, type: "sell", price: data[134].low, low: data[134].low, high: data[134].high},
+{date: data[135].date, type: "sell", price: data[135].low, low: data[135].low, high: data[135].high},
+{date: data[136].date, type: "sell", price: data[136].low, low: data[136].low, high: data[136].high},
+{date: data[137].date, type: "sell", price: data[137].low, low: data[137].low, high: data[137].high},
+{date: data[138].date, type: "sell", price: data[138].low, low: data[138].low, high: data[138].high},
+{date: data[140].date, type: "sell", price: data[140].low, low: data[140].low, high: data[140].high},
+{date: data[141].date, type: "sell", price: data[141].low, low: data[141].low, high: data[141].high},
+{date: data[142].date, type: "sell", price: data[142].low, low: data[142].low, high: data[142].high},
+{date: data[143].date, type: "sell", price: data[143].low, low: data[143].low, high: data[143].high},
+{date: data[144].date, type: "sell", price: data[144].low, low: data[144].low, high: data[144].high},
+{date: data[145].date, type: "sell", price: data[145].low, low: data[145].low, high: data[145].high},
+{date: data[146].date, type: "sell", price: data[146].low, low: data[146].low, high: data[146].high},
+{date: data[149].date, type: "buy", price: data[149].low, low: data[149].low, high: data[149].high},
+{date: data[150].date, type: "buy", price: data[150].low, low: data[150].low, high: data[150].high},
+{date: data[151].date, type: "buy", price: data[151].low, low: data[151].low, high: data[151].high},
+{date: data[152].date, type: "buy", price: data[152].low, low: data[152].low, high: data[152].high},
+{date: data[153].date, type: "buy", price: data[153].low, low: data[153].low, high: data[153].high},
+{date: data[154].date, type: "buy", price: data[154].low, low: data[154].low, high: data[154].high},
+{date: data[157].date, type: "buy", price: data[157].low, low: data[157].low, high: data[157].high},
+{date: data[158].date, type: "buy", price: data[158].low, low: data[158].low, high: data[158].high},
+{date: data[159].date, type: "buy", price: data[159].low, low: data[159].low, high: data[159].high},
+{date: data[160].date, type: "buy", price: data[160].low, low: data[160].low, high: data[160].high},
+{date: data[161].date, type: "buy", price: data[161].low, low: data[161].low, high: data[161].high},
+{date: data[165].date, type: "buy", price: data[165].low, low: data[165].low, high: data[165].high},
+{date: data[166].date, type: "buy", price: data[166].low, low: data[166].low, high: data[166].high},
+{date: data[167].date, type: "buy", price: data[167].low, low: data[167].low, high: data[167].high},
+{date: data[168].date, type: "buy", price: data[168].low, low: data[168].low, high: data[168].high},
+{date: data[169].date, type: "buy", price: data[169].low, low: data[169].low, high: data[169].high},
+{date: data[170].date, type: "buy", price: data[170].low, low: data[170].low, high: data[170].high},
+{date: data[175].date, type: "buy", price: data[175].low, low: data[175].low, high: data[175].high},
+{date: data[176].date, type: "buy", price: data[176].low, low: data[176].low, high: data[176].high},
+{date: data[177].date, type: "buy", price: data[177].low, low: data[177].low, high: data[177].high},
+{date: data[178].date, type: "buy", price: data[178].low, low: data[178].low, high: data[178].high},
+{date: data[179].date, type: "buy", price: data[179].low, low: data[179].low, high: data[179].high},
+{date: data[183].date, type: "buy", price: data[183].low, low: data[183].low, high: data[183].high},
+{date: data[184].date, type: "buy", price: data[184].low, low: data[184].low, high: data[184].high},
+{date: data[185].date, type: "buy", price: data[185].low, low: data[185].low, high: data[185].high},
+{date: data[186].date, type: "buy", price: data[186].low, low: data[186].low, high: data[186].high},
+{date: data[187].date, type: "buy", price: data[187].low, low: data[187].low, high: data[187].high},
+{date: data[188].date, type: "buy", price: data[188].low, low: data[188].low, high: data[188].high},
+{date: data[189].date, type: "buy", price: data[189].low, low: data[189].low, high: data[189].high},
+{date: data[190].date, type: "buy", price: data[190].low, low: data[190].low, high: data[190].high},
+{date: data[191].date, type: "buy", price: data[191].low, low: data[191].low, high: data[191].high},
+{date: data[192].date, type: "buy", price: data[192].low, low: data[192].low, high: data[192].high},
+{date: data[193].date, type: "buy", price: data[193].low, low: data[193].low, high: data[193].high},
+{date: data[194].date, type: "buy", price: data[194].low, low: data[194].low, high: data[194].high},
+{date: data[195].date, type: "buy", price: data[195].low, low: data[195].low, high: data[195].high},
+{date: data[196].date, type: "buy", price: data[196].low, low: data[196].low, high: data[196].high},
+{date: data[197].date, type: "buy", price: data[197].low, low: data[197].low, high: data[197].high},
+{date: data[198].date, type: "buy", price: data[198].low, low: data[198].low, high: data[198].high},
+{date: data[202].date, type: "sell", price: data[202].low, low: data[202].low, high: data[202].high},
+{date: data[203].date, type: "sell", price: data[203].low, low: data[203].low, high: data[203].high},
+{date: data[204].date, type: "sell", price: data[204].low, low: data[204].low, high: data[204].high},
+{date: data[205].date, type: "sell", price: data[205].low, low: data[205].low, high: data[205].high},
+{date: data[206].date, type: "sell", price: data[206].low, low: data[206].low, high: data[206].high},
+{date: data[207].date, type: "sell", price: data[207].low, low: data[207].low, high: data[207].high},
+{date: data[208].date, type: "sell", price: data[208].low, low: data[208].low, high: data[208].high},
+{date: data[209].date, type: "sell", price: data[209].low, low: data[209].low, high: data[209].high},
+{date: data[210].date, type: "sell", price: data[210].low, low: data[210].low, high: data[210].high},
+{date: data[211].date, type: "sell", price: data[211].low, low: data[211].low, high: data[211].high},
+{date: data[212].date, type: "sell", price: data[212].low, low: data[212].low, high: data[212].high},
+{date: data[219].date, type: "buy", price: data[219].low, low: data[219].low, high: data[219].high},
+{date: data[220].date, type: "buy", price: data[220].low, low: data[220].low, high: data[220].high},
+{date: data[221].date, type: "buy", price: data[221].low, low: data[221].low, high: data[221].high},
+{date: data[222].date, type: "buy", price: data[222].low, low: data[222].low, high: data[222].high},
+{date: data[223].date, type: "buy", price: data[223].low, low: data[223].low, high: data[223].high},
+{date: data[224].date, type: "buy", price: data[224].low, low: data[224].low, high: data[224].high},
+{date: data[225].date, type: "buy", price: data[225].low, low: data[225].low, high: data[225].high},
+{date: data[226].date, type: "buy", price: data[226].low, low: data[226].low, high: data[226].high},
+{date: data[227].date, type: "buy", price: data[227].low, low: data[227].low, high: data[227].high},
+{date: data[228].date, type: "buy", price: data[228].low, low: data[228].low, high: data[228].high},
+{date: data[229].date, type: "buy", price: data[229].low, low: data[229].low, high: data[229].high},
+{date: data[230].date, type: "buy", price: data[230].low, low: data[230].low, high: data[230].high},
+{date: data[231].date, type: "buy", price: data[231].low, low: data[231].low, high: data[231].high},
+{date: data[232].date, type: "buy", price: data[232].low, low: data[232].low, high: data[232].high},
+{date: data[239].date, type: "sell", price: data[239].low, low: data[239].low, high: data[239].high},
+{date: data[241].date, type: "sell", price: data[241].low, low: data[241].low, high: data[241].high},
+{date: data[245].date, type: "sell", price: data[245].low, low: data[245].low, high: data[245].high},
+{date: data[247].date, type: "sell", price: data[247].low, low: data[247].low, high: data[247].high},
+{date: data[252].date, type: "buy", price: data[252].low, low: data[252].low, high: data[252].high},
+{date: data[253].date, type: "buy", price: data[253].low, low: data[253].low, high: data[253].high},
+{date: data[254].date, type: "buy", price: data[254].low, low: data[254].low, high: data[254].high},
+{date: data[255].date, type: "buy", price: data[255].low, low: data[255].low, high: data[255].high},
+{date: data[256].date, type: "buy", price: data[256].low, low: data[256].low, high: data[256].high},
+{date: data[257].date, type: "buy", price: data[257].low, low: data[257].low, high: data[257].high},
+{date: data[258].date, type: "buy", price: data[258].low, low: data[258].low, high: data[258].high},
+{date: data[260].date, type: "buy", price: data[260].low, low: data[260].low, high: data[260].high},
+{date: data[261].date, type: "buy", price: data[261].low, low: data[261].low, high: data[261].high},
+{date: data[262].date, type: "buy", price: data[262].low, low: data[262].low, high: data[262].high},
+{date: data[263].date, type: "buy", price: data[263].low, low: data[263].low, high: data[263].high},
+{date: data[264].date, type: "buy", price: data[264].low, low: data[264].low, high: data[264].high},
+{date: data[265].date, type: "buy", price: data[265].low, low: data[265].low, high: data[265].high},
+{date: data[266].date, type: "buy", price: data[266].low, low: data[266].low, high: data[266].high},
+{date: data[270].date, type: "sell", price: data[270].low, low: data[270].low, high: data[270].high},
+{date: data[271].date, type: "sell", price: data[271].low, low: data[271].low, high: data[271].high},
+{date: data[272].date, type: "sell", price: data[272].low, low: data[272].low, high: data[272].high},
+{date: data[273].date, type: "sell", price: data[273].low, low: data[273].low, high: data[273].high},
+{date: data[274].date, type: "sell", price: data[274].low, low: data[274].low, high: data[274].high},
+{date: data[275].date, type: "sell", price: data[275].low, low: data[275].low, high: data[275].high},
+{date: data[276].date, type: "sell", price: data[276].low, low: data[276].low, high: data[276].high},
+{date: data[278].date, type: "sell", price: data[278].low, low: data[278].low, high: data[278].high},
+{date: data[280].date, type: "sell", price: data[280].low, low: data[280].low, high: data[280].high},
+{date: data[281].date, type: "sell", price: data[281].low, low: data[281].low, high: data[281].high},
+{date: data[282].date, type: "sell", price: data[282].low, low: data[282].low, high: data[282].high},
+{date: data[285].date, type: "buy", price: data[285].low, low: data[285].low, high: data[285].high},
+{date: data[286].date, type: "buy", price: data[286].low, low: data[286].low, high: data[286].high},
+{date: data[287].date, type: "buy", price: data[287].low, low: data[287].low, high: data[287].high},
+{date: data[288].date, type: "buy", price: data[288].low, low: data[288].low, high: data[288].high},
+{date: data[289].date, type: "buy", price: data[289].low, low: data[289].low, high: data[289].high},
+{date: data[290].date, type: "buy", price: data[290].low, low: data[290].low, high: data[290].high},
+{date: data[291].date, type: "buy", price: data[291].low, low: data[291].low, high: data[291].high},
+{date: data[292].date, type: "buy", price: data[292].low, low: data[292].low, high: data[292].high},
+{date: data[293].date, type: "buy", price: data[293].low, low: data[293].low, high: data[293].high},
+{date: data[299].date, type: "buy", price: data[299].low, low: data[299].low, high: data[299].high},
+{date: data[300].date, type: "sell", price: data[300].low, low: data[300].low, high: data[300].high},
+{date: data[301].date, type: "sell", price: data[301].low, low: data[301].low, high: data[301].high},
+{date: data[302].date, type: "sell", price: data[302].low, low: data[302].low, high: data[302].high},
+{date: data[303].date, type: "sell", price: data[303].low, low: data[303].low, high: data[303].high},
+{date: data[304].date, type: "sell", price: data[304].low, low: data[304].low, high: data[304].high},
+{date: data[305].date, type: "sell", price: data[305].low, low: data[305].low, high: data[305].high},
+{date: data[306].date, type: "sell", price: data[306].low, low: data[306].low, high: data[306].high},
+{date: data[307].date, type: "sell", price: data[307].low, low: data[307].low, high: data[307].high},
+{date: data[308].date, type: "sell", price: data[308].low, low: data[308].low, high: data[308].high},
+{date: data[309].date, type: "sell", price: data[309].low, low: data[309].low, high: data[309].high},
+{date: data[310].date, type: "sell", price: data[310].low, low: data[310].low, high: data[310].high},
+{date: data[311].date, type: "sell", price: data[311].low, low: data[311].low, high: data[311].high},
+{date: data[312].date, type: "sell", price: data[312].low, low: data[312].low, high: data[312].high},
+{date: data[313].date, type: "sell", price: data[313].low, low: data[313].low, high: data[313].high},
+{date: data[314].date, type: "sell", price: data[314].low, low: data[314].low, high: data[314].high},
+{date: data[315].date, type: "sell", price: data[315].low, low: data[315].low, high: data[315].high},
+{date: data[316].date, type: "sell", price: data[316].low, low: data[316].low, high: data[316].high},
+{date: data[322].date, type: "sell", price: data[322].low, low: data[322].low, high: data[322].high},
+{date: data[323].date, type: "sell", price: data[323].low, low: data[323].low, high: data[323].high},
+{date: data[324].date, type: "sell", price: data[324].low, low: data[324].low, high: data[324].high},
+{date: data[326].date, type: "sell", price: data[326].low, low: data[326].low, high: data[326].high},
+{date: data[327].date, type: "sell", price: data[327].low, low: data[327].low, high: data[327].high},
+{date: data[328].date, type: "buy", price: data[328].low, low: data[328].low, high: data[328].high},
+{date: data[329].date, type: "buy", price: data[329].low, low: data[329].low, high: data[329].high},
+{date: data[330].date, type: "buy", price: data[330].low, low: data[330].low, high: data[330].high},
+{date: data[331].date, type: "buy", price: data[331].low, low: data[331].low, high: data[331].high},
+{date: data[332].date, type: "buy", price: data[332].low, low: data[332].low, high: data[332].high},
+{date: data[333].date, type: "sell", price: data[333].low, low: data[333].low, high: data[333].high},
+{date: data[334].date, type: "sell", price: data[334].low, low: data[334].low, high: data[334].high},
+{date: data[335].date, type: "sell", price: data[335].low, low: data[335].low, high: data[335].high},
+{date: data[336].date, type: "sell", price: data[336].low, low: data[336].low, high: data[336].high},
+{date: data[339].date, type: "sell", price: data[339].low, low: data[339].low, high: data[339].high},
+{date: data[340].date, type: "sell", price: data[340].low, low: data[340].low, high: data[340].high},
+{date: data[343].date, type: "sell", price: data[343].low, low: data[343].low, high: data[343].high},
+{date: data[349].date, type: "sell", price: data[349].low, low: data[349].low, high: data[349].high},
+{date: data[351].date, type: "buy", price: data[351].low, low: data[351].low, high: data[351].high},
+{date: data[352].date, type: "buy", price: data[352].low, low: data[352].low, high: data[352].high},
+{date: data[353].date, type: "buy", price: data[353].low, low: data[353].low, high: data[353].high},
+{date: data[355].date, type: "sell", price: data[355].low, low: data[355].low, high: data[355].high},
+{date: data[356].date, type: "sell", price: data[356].low, low: data[356].low, high: data[356].high},
+{date: data[357].date, type: "sell", price: data[357].low, low: data[357].low, high: data[357].high},
+{date: data[358].date, type: "sell", price: data[358].low, low: data[358].low, high: data[358].high},
+{date: data[359].date, type: "sell", price: data[359].low, low: data[359].low, high: data[359].high},
+{date: data[360].date, type: "sell", price: data[360].low, low: data[360].low, high: data[360].high},
+{date: data[365].date, type: "buy", price: data[365].low, low: data[365].low, high: data[365].high},
+{date: data[366].date, type: "buy", price: data[366].low, low: data[366].low, high: data[366].high},
+{date: data[367].date, type: "buy", price: data[367].low, low: data[367].low, high: data[367].high},
+{date: data[368].date, type: "buy", price: data[368].low, low: data[368].low, high: data[368].high},
+{date: data[369].date, type: "buy", price: data[369].low, low: data[369].low, high: data[369].high},
+{date: data[372].date, type: "buy", price: data[372].low, low: data[372].low, high: data[372].high},
+{date: data[374].date, type: "buy", price: data[374].low, low: data[374].low, high: data[374].high},
+{date: data[375].date, type: "buy", price: data[375].low, low: data[375].low, high: data[375].high},
+{date: data[378].date, type: "sell", price: data[378].low, low: data[378].low, high: data[378].high},
+{date: data[379].date, type: "sell", price: data[379].low, low: data[379].low, high: data[379].high},
+{date: data[380].date, type: "sell", price: data[380].low, low: data[380].low, high: data[380].high},
+{date: data[381].date, type: "sell", price: data[381].low, low: data[381].low, high: data[381].high},
+{date: data[386].date, type: "sell", price: data[386].low, low: data[386].low, high: data[386].high},
+{date: data[387].date, type: "sell", price: data[387].low, low: data[387].low, high: data[387].high},
+{date: data[388].date, type: "sell", price: data[388].low, low: data[388].low, high: data[388].high},
+{date: data[389].date, type: "sell", price: data[389].low, low: data[389].low, high: data[389].high},
+{date: data[390].date, type: "sell", price: data[390].low, low: data[390].low, high: data[390].high},
+{date: data[392].date, type: "sell", price: data[392].low, low: data[392].low, high: data[392].high},
+{date: data[394].date, type: "sell", price: data[394].low, low: data[394].low, high: data[394].high},
+{date: data[395].date, type: "sell", price: data[395].low, low: data[395].low, high: data[395].high},
+{date: data[396].date, type: "sell", price: data[396].low, low: data[396].low, high: data[396].high},
+{date: data[397].date, type: "sell", price: data[397].low, low: data[397].low, high: data[397].high},
+{date: data[398].date, type: "sell", price: data[398].low, low: data[398].low, high: data[398].high},
+{date: data[399].date, type: "sell", price: data[399].low, low: data[399].low, high: data[399].high},
+{date: data[400].date, type: "sell", price: data[400].low, low: data[400].low, high: data[400].high},
+{date: data[401].date, type: "sell", price: data[401].low, low: data[401].low, high: data[401].high},
+{date: data[402].date, type: "sell", price: data[402].low, low: data[402].low, high: data[402].high},
+{date: data[403].date, type: "sell", price: data[403].low, low: data[403].low, high: data[403].high},
+{date: data[409].date, type: "sell", price: data[409].low, low: data[409].low, high: data[409].high},
+{date: data[410].date, type: "sell", price: data[410].low, low: data[410].low, high: data[410].high},
+{date: data[411].date, type: "sell", price: data[411].low, low: data[411].low, high: data[411].high},
+{date: data[413].date, type: "buy", price: data[413].low, low: data[413].low, high: data[413].high},
+{date: data[414].date, type: "buy", price: data[414].low, low: data[414].low, high: data[414].high},
+{date: data[415].date, type: "buy", price: data[415].low, low: data[415].low, high: data[415].high},
+{date: data[416].date, type: "buy", price: data[416].low, low: data[416].low, high: data[416].high},
+{date: data[417].date, type: "buy", price: data[417].low, low: data[417].low, high: data[417].high},
+{date: data[418].date, type: "buy", price: data[418].low, low: data[418].low, high: data[418].high},
+{date: data[419].date, type: "buy", price: data[419].low, low: data[419].low, high: data[419].high},
+{date: data[420].date, type: "buy", price: data[420].low, low: data[420].low, high: data[420].high},
+{date: data[421].date, type: "buy", price: data[421].low, low: data[421].low, high: data[421].high},
+{date: data[422].date, type: "buy", price: data[422].low, low: data[422].low, high: data[422].high},
+{date: data[423].date, type: "buy", price: data[423].low, low: data[423].low, high: data[423].high},
+{date: data[425].date, type: "buy", price: data[425].low, low: data[425].low, high: data[425].high},
+{date: data[429].date, type: "buy", price: data[429].low, low: data[429].low, high: data[429].high},
+{date: data[430].date, type: "buy", price: data[430].low, low: data[430].low, high: data[430].high},
+{date: data[431].date, type: "buy", price: data[431].low, low: data[431].low, high: data[431].high},
+{date: data[432].date, type: "buy", price: data[432].low, low: data[432].low, high: data[432].high},
+{date: data[433].date, type: "buy", price: data[433].low, low: data[433].low, high: data[433].high},
+{date: data[434].date, type: "buy", price: data[434].low, low: data[434].low, high: data[434].high},
+{date: data[435].date, type: "buy", price: data[435].low, low: data[435].low, high: data[435].high},
+{date: data[442].date, type: "buy", price: data[442].low, low: data[442].low, high: data[442].high},
+{date: data[443].date, type: "buy", price: data[443].low, low: data[443].low, high: data[443].high},
+{date: data[444].date, type: "buy", price: data[444].low, low: data[444].low, high: data[444].high},
+{date: data[446].date, type: "buy", price: data[446].low, low: data[446].low, high: data[446].high},
+{date: data[447].date, type: "buy", price: data[447].low, low: data[447].low, high: data[447].high},
+{date: data[449].date, type: "buy", price: data[449].low, low: data[449].low, high: data[449].high},
+{date: data[451].date, type: "sell", price: data[451].low, low: data[451].low, high: data[451].high},
+{date: data[452].date, type: "sell", price: data[452].low, low: data[452].low, high: data[452].high},
+{date: data[453].date, type: "sell", price: data[453].low, low: data[453].low, high: data[453].high},
+{date: data[454].date, type: "sell", price: data[454].low, low: data[454].low, high: data[454].high},
+{date: data[455].date, type: "sell", price: data[455].low, low: data[455].low, high: data[455].high},
+{date: data[459].date, type: "sell", price: data[459].low, low: data[459].low, high: data[459].high},
+{date: data[460].date, type: "sell", price: data[460].low, low: data[460].low, high: data[460].high},
+{date: data[461].date, type: "sell", price: data[461].low, low: data[461].low, high: data[461].high},
+{date: data[462].date, type: "sell", price: data[462].low, low: data[462].low, high: data[462].high},
+{date: data[463].date, type: "sell", price: data[463].low, low: data[463].low, high: data[463].high},
+{date: data[464].date, type: "sell", price: data[464].low, low: data[464].low, high: data[464].high},
+{date: data[465].date, type: "sell", price: data[465].low, low: data[465].low, high: data[465].high},
+{date: data[466].date, type: "sell", price: data[466].low, low: data[466].low, high: data[466].high},
+{date: data[467].date, type: "sell", price: data[467].low, low: data[467].low, high: data[467].high},
+{date: data[468].date, type: "sell", price: data[468].low, low: data[468].low, high: data[468].high},
+{date: data[472].date, type: "buy", price: data[472].low, low: data[472].low, high: data[472].high},
+{date: data[473].date, type: "buy", price: data[473].low, low: data[473].low, high: data[473].high},
+{date: data[474].date, type: "buy", price: data[474].low, low: data[474].low, high: data[474].high},
+{date: data[475].date, type: "buy", price: data[475].low, low: data[475].low, high: data[475].high},
+{date: data[476].date, type: "buy", price: data[476].low, low: data[476].low, high: data[476].high},
+{date: data[477].date, type: "buy", price: data[477].low, low: data[477].low, high: data[477].high},
+{date: data[478].date, type: "buy", price: data[478].low, low: data[478].low, high: data[478].high},
+{date: data[479].date, type: "buy", price: data[479].low, low: data[479].low, high: data[479].high},
+{date: data[481].date, type: "buy", price: data[481].low, low: data[481].low, high: data[481].high},
+{date: data[482].date, type: "buy", price: data[482].low, low: data[482].low, high: data[482].high},
+{date: data[483].date, type: "buy", price: data[483].low, low: data[483].low, high: data[483].high},
+{date: data[484].date, type: "buy", price: data[484].low, low: data[484].low, high: data[484].high},
+{date: data[485].date, type: "buy", price: data[485].low, low: data[485].low, high: data[485].high},
+{date: data[486].date, type: "buy", price: data[486].low, low: data[486].low, high: data[486].high},
+{date: data[487].date, type: "buy", price: data[487].low, low: data[487].low, high: data[487].high},
+{date: data[488].date, type: "buy", price: data[488].low, low: data[488].low, high: data[488].high},
+{date: data[489].date, type: "buy", price: data[489].low, low: data[489].low, high: data[489].high},
+{date: data[490].date, type: "buy", price: data[490].low, low: data[490].low, high: data[490].high},
+{date: data[491].date, type: "buy", price: data[491].low, low: data[491].low, high: data[491].high},
+{date: data[492].date, type: "buy", price: data[492].low, low: data[492].low, high: data[492].high},
+{date: data[493].date, type: "buy", price: data[493].low, low: data[493].low, high: data[493].high},
+{date: data[499].date, type: "sell", price: data[499].low, low: data[499].low, high: data[499].high},
+{date: data[501].date, type: "sell", price: data[501].low, low: data[501].low, high: data[501].high},
+{date: data[505].date, type: "sell", price: data[505].low, low: data[505].low, high: data[505].high},
+{date: data[506].date, type: "sell", price: data[506].low, low: data[506].low, high: data[506].high},
+{date: data[507].date, type: "sell", price: data[507].low, low: data[507].low, high: data[507].high},
+{date: data[508].date, type: "sell", price: data[508].low, low: data[508].low, high: data[508].high},
+{date: data[509].date, type: "sell", price: data[509].low, low: data[509].low, high: data[509].high},
+{date: data[510].date, type: "sell", price: data[510].low, low: data[510].low, high: data[510].high},
+{date: data[513].date, type: "buy", price: data[513].low, low: data[513].low, high: data[513].high},
+{date: data[514].date, type: "buy", price: data[514].low, low: data[514].low, high: data[514].high},
+{date: data[515].date, type: "buy", price: data[515].low, low: data[515].low, high: data[515].high},
+{date: data[516].date, type: "buy", price: data[516].low, low: data[516].low, high: data[516].high},
+{date: data[517].date, type: "buy", price: data[517].low, low: data[517].low, high: data[517].high},
+{date: data[518].date, type: "buy", price: data[518].low, low: data[518].low, high: data[518].high},
+{date: data[519].date, type: "buy", price: data[519].low, low: data[519].low, high: data[519].high},
+{date: data[525].date, type: "sell", price: data[525].low, low: data[525].low, high: data[525].high},
+{date: data[528].date, type: "buy", price: data[528].low, low: data[528].low, high: data[528].high},
+{date: data[529].date, type: "buy", price: data[529].low, low: data[529].low, high: data[529].high},
+{date: data[530].date, type: "buy", price: data[530].low, low: data[530].low, high: data[530].high},
+{date: data[531].date, type: "buy", price: data[531].low, low: data[531].low, high: data[531].high},
+{date: data[532].date, type: "buy", price: data[532].low, low: data[532].low, high: data[532].high},
+{date: data[533].date, type: "buy", price: data[533].low, low: data[533].low, high: data[533].high},
+{date: data[534].date, type: "buy", price: data[534].low, low: data[534].low, high: data[534].high},
+{date: data[535].date, type: "buy", price: data[535].low, low: data[535].low, high: data[535].high},
+{date: data[537].date, type: "buy", price: data[537].low, low: data[537].low, high: data[537].high},
+{date: data[541].date, type: "buy", price: data[541].low, low: data[541].low, high: data[541].high},
+{date: data[544].date, type: "sell", price: data[544].low, low: data[544].low, high: data[544].high},
+{date: data[545].date, type: "sell", price: data[545].low, low: data[545].low, high: data[545].high},
+{date: data[546].date, type: "sell", price: data[546].low, low: data[546].low, high: data[546].high},
+{date: data[547].date, type: "sell", price: data[547].low, low: data[547].low, high: data[547].high},
+{date: data[549].date, type: "sell", price: data[549].low, low: data[549].low, high: data[549].high},
+{date: data[550].date, type: "sell", price: data[550].low, low: data[550].low, high: data[550].high},
+{date: data[551].date, type: "sell", price: data[551].low, low: data[551].low, high: data[551].high},
+{date: data[552].date, type: "sell", price: data[552].low, low: data[552].low, high: data[552].high},
+{date: data[553].date, type: "sell", price: data[553].low, low: data[553].low, high: data[553].high},
+{date: data[557].date, type: "buy", price: data[557].low, low: data[557].low, high: data[557].high},
+{date: data[558].date, type: "buy", price: data[558].low, low: data[558].low, high: data[558].high},
+{date: data[559].date, type: "buy", price: data[559].low, low: data[559].low, high: data[559].high},
+{date: data[560].date, type: "buy", price: data[560].low, low: data[560].low, high: data[560].high},
+{date: data[561].date, type: "buy", price: data[561].low, low: data[561].low, high: data[561].high},
+{date: data[562].date, type: "buy", price: data[562].low, low: data[562].low, high: data[562].high},
+{date: data[563].date, type: "buy", price: data[563].low, low: data[563].low, high: data[563].high},
+{date: data[564].date, type: "buy", price: data[564].low, low: data[564].low, high: data[564].high},
+{date: data[565].date, type: "buy", price: data[565].low, low: data[565].low, high: data[565].high},
+{date: data[566].date, type: "buy", price: data[566].low, low: data[566].low, high: data[566].high},
+{date: data[567].date, type: "buy", price: data[567].low, low: data[567].low, high: data[567].high},
+{date: data[568].date, type: "buy", price: data[568].low, low: data[568].low, high: data[568].high},
+{date: data[569].date, type: "buy", price: data[569].low, low: data[569].low, high: data[569].high},
+{date: data[570].date, type: "buy", price: data[570].low, low: data[570].low, high: data[570].high},
+{date: data[571].date, type: "buy", price: data[571].low, low: data[571].low, high: data[571].high},
+{date: data[572].date, type: "buy", price: data[572].low, low: data[572].low, high: data[572].high},
+{date: data[573].date, type: "buy", price: data[573].low, low: data[573].low, high: data[573].high},
+{date: data[574].date, type: "buy", price: data[574].low, low: data[574].low, high: data[574].high},
+{date: data[575].date, type: "buy", price: data[575].low, low: data[575].low, high: data[575].high},
+{date: data[576].date, type: "buy", price: data[576].low, low: data[576].low, high: data[576].high},
+{date: data[577].date, type: "buy", price: data[577].low, low: data[577].low, high: data[577].high},
+{date: data[578].date, type: "buy", price: data[578].low, low: data[578].low, high: data[578].high},
+{date: data[582].date, type: "sell", price: data[582].low, low: data[582].low, high: data[582].high},
+{date: data[583].date, type: "sell", price: data[583].low, low: data[583].low, high: data[583].high},
+{date: data[584].date, type: "sell", price: data[584].low, low: data[584].low, high: data[584].high},
+{date: data[585].date, type: "sell", price: data[585].low, low: data[585].low, high: data[585].high},
+{date: data[586].date, type: "sell", price: data[586].low, low: data[586].low, high: data[586].high},
+{date: data[587].date, type: "sell", price: data[587].low, low: data[587].low, high: data[587].high},
+{date: data[588].date, type: "sell", price: data[588].low, low: data[588].low, high: data[588].high},
+{date: data[589].date, type: "sell", price: data[589].low, low: data[589].low, high: data[589].high},
+{date: data[590].date, type: "sell", price: data[590].low, low: data[590].low, high: data[590].high},
+{date: data[596].date, type: "sell", price: data[596].low, low: data[596].low, high: data[596].high},
+{date: data[597].date, type: "sell", price: data[597].low, low: data[597].low, high: data[597].high},
+{date: data[598].date, type: "sell", price: data[598].low, low: data[598].low, high: data[598].high},
+{date: data[599].date, type: "sell", price: data[599].low, low: data[599].low, high: data[599].high},
+{date: data[603].date, type: "buy", price: data[603].low, low: data[603].low, high: data[603].high},
+{date: data[604].date, type: "buy", price: data[604].low, low: data[604].low, high: data[604].high},
+{date: data[606].date, type: "sell", price: data[606].low, low: data[606].low, high: data[606].high},
+{date: data[607].date, type: "sell", price: data[607].low, low: data[607].low, high: data[607].high},
+{date: data[608].date, type: "sell", price: data[608].low, low: data[608].low, high: data[608].high},
+{date: data[609].date, type: "sell", price: data[609].low, low: data[609].low, high: data[609].high},
+{date: data[610].date, type: "sell", price: data[610].low, low: data[610].low, high: data[610].high},
+{date: data[611].date, type: "sell", price: data[611].low, low: data[611].low, high: data[611].high},
+{date: data[612].date, type: "sell", price: data[612].low, low: data[612].low, high: data[612].high},
+{date: data[613].date, type: "sell", price: data[613].low, low: data[613].low, high: data[613].high},
+{date: data[614].date, type: "sell", price: data[614].low, low: data[614].low, high: data[614].high},
+{date: data[615].date, type: "sell", price: data[615].low, low: data[615].low, high: data[615].high},
+{date: data[616].date, type: "sell", price: data[616].low, low: data[616].low, high: data[616].high},
+{date: data[619].date, type: "buy", price: data[619].low, low: data[619].low, high: data[619].high},
+{date: data[620].date, type: "buy", price: data[620].low, low: data[620].low, high: data[620].high},
+{date: data[621].date, type: "buy", price: data[621].low, low: data[621].low, high: data[621].high},
+{date: data[626].date, type: "sell", price: data[626].low, low: data[626].low, high: data[626].high},
+{date: data[627].date, type: "sell", price: data[627].low, low: data[627].low, high: data[627].high},
+{date: data[628].date, type: "sell", price: data[628].low, low: data[628].low, high: data[628].high},
+{date: data[629].date, type: "sell", price: data[629].low, low: data[629].low, high: data[629].high},
+{date: data[630].date, type: "sell", price: data[630].low, low: data[630].low, high: data[630].high},
+{date: data[631].date, type: "sell", price: data[631].low, low: data[631].low, high: data[631].high},
+{date: data[632].date, type: "sell", price: data[632].low, low: data[632].low, high: data[632].high},
+{date: data[635].date, type: "sell", price: data[635].low, low: data[635].low, high: data[635].high},
+{date: data[636].date, type: "sell", price: data[636].low, low: data[636].low, high: data[636].high},
+{date: data[637].date, type: "sell", price: data[637].low, low: data[637].low, high: data[637].high},
+{date: data[638].date, type: "sell", price: data[638].low, low: data[638].low, high: data[638].high},
+{date: data[639].date, type: "sell", price: data[639].low, low: data[639].low, high: data[639].high}
+];
+        
+
+        var macdData = techan.indicator.macd()(data);
+        macdScale.domain(techan.scale.plot.macd(macdData).domain());
+        var rsiData = techan.indicator.rsi()(data);
+        rsiScale.domain(techan.scale.plot.rsi(rsiData).domain());
+
+        svg.select("g.candlestick").datum(data).call(candlestick);
+        svg.select("g.close.annotation").datum([data[data.length-1]]).call(closeAnnotation);
+        svg.select("g.volume").datum(data).call(volume);
+        svg.select("g.sma.ma-0").datum(techan.indicator.sma().period(5)(data)).call(sma0);
+        svg.select("g.sma.ma-1").datum(techan.indicator.sma().period(18)(data)).call(sma1);
+        svg.select("g.ema.ma-2").datum(techan.indicator.ema().period(50)(data)).call(ema2);
+        svg.select("g.macd .indicator-plot").datum(macdData).call(macd);
+        svg.select("g.rsi .indicator-plot").datum(rsiData).call(rsi);
+
+        svg.select("g.crosshair.ohlc").call(ohlcCrosshair).call(zoom);
+        svg.select("g.crosshair.macd").call(macdCrosshair).call(zoom);
+        svg.select("g.crosshair.rsi").call(rsiCrosshair).call(zoom);
+        ////<!-- svg.select("g.trendlines").datum(trendlineData).call(trendline).call(trendline.drag); -->
+        ////<!-- svg.select("g.supstances").datum(supstanceData).call(supstance).call(supstance.drag); -->
+        ////<!-- svg.select("g.tradearrow").datum(trades).call(tradearrow); -->
+
+svg.select("g.tradearrow").datum(trades).call(tradearrow);
+
+
+        // Stash for zooming
+        zoomableInit = x.zoomable().domain([indicatorPreRoll, data.length]).copy(); // Zoom in a little to hide indicator preroll
+        yInit = y.copy();
+        yPercentInit = yPercent.copy();
+
+        draw();
+    });
+
+    function reset() {
+        zoom.scale(1);
+        zoom.translate([0,0]);
+        draw();
+    }
+
+    function zoomed() {
+        x.zoomable().domain(d3.event.transform.rescaleX(zoomableInit).domain());
+        y.domain(d3.event.transform.rescaleY(yInit).domain());
+        yPercent.domain(d3.event.transform.rescaleY(yPercentInit).domain());
+
+        draw();
+    }
+
+    function draw() {
+        svg.select("g.x.axis").call(xAxis);
+        svg.select("g.ohlc .axis").call(yAxis);
+        svg.select("g.volume.axis").call(volumeAxis);
+        svg.select("g.percent.axis").call(percentAxis);
+        svg.select("g.macd .axis.right").call(macdAxis);
+        svg.select("g.rsi .axis.right").call(rsiAxis);
+        svg.select("g.macd .axis.left").call(macdAxisLeft);
+        svg.select("g.rsi .axis.left").call(rsiAxisLeft);
+
+        // We know the data does not change, a simple refresh that does not perform data joins will suffice.
+        svg.select("g.candlestick").call(candlestick.refresh);
+        svg.select("g.close.annotation").call(closeAnnotation.refresh);
+        svg.select("g.volume").call(volume.refresh);
+        svg.select("g .sma.ma-0").call(sma0.refresh);
+        svg.select("g .sma.ma-1").call(sma1.refresh);
+        svg.select("g .ema.ma-2").call(ema2.refresh);
+        svg.select("g.macd .indicator-plot").call(macd.refresh);
+        svg.select("g.rsi .indicator-plot").call(rsi.refresh);
+        svg.select("g.crosshair.ohlc").call(ohlcCrosshair.refresh);
+        svg.select("g.crosshair.macd").call(macdCrosshair.refresh);
+        svg.select("g.crosshair.rsi").call(rsiCrosshair.refresh);
+        <!-- svg.select("g.trendlines").call(trendline.refresh); -->
+        <!-- svg.select("g.supstances").call(supstance.refresh); -->
+        <!-- svg.select("g.tradearrow").call(tradearrow.refresh); -->
+
+svg.select("g.tradearrow").call(tradearrow.refresh);
+
+    }
+
+    </script>

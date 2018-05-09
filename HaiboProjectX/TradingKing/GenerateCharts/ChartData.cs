@@ -20,6 +20,8 @@ namespace GenerateCharts
 
         public long Volume { get; set; }
 
+        public string Code { get; set; }
+
         public override string ToString()
         {
             string formatedDate = Date.ToString("d-MMM-y");
